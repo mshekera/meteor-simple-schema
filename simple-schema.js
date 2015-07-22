@@ -456,6 +456,9 @@ SimpleSchema = function(schemas, options) {
   // a place to store custom error messages for this schema
   self._messages = {};
 
+  // a place to store custom placeholders for error messages for this schema
+  self._placeholders = {};
+
   self._depsMessages = new Deps.Dependency();
   self._depsLabels = {};
 
@@ -936,6 +939,59 @@ SimpleSchema._globalMessages = {
   keyNotInSchema: "[key] is not allowed by the schema"
 };
 
+SimpleSchema._globalPlaceholders = {
+  key: function (self, key, def) {
+    return key;
+  },
+  label: function (self, key, def) {
+    return self.label(key);
+  },
+  minCount: function (self, key, def) {
+    if (typeof def.maxCount !== "undefined") {
+      return def.maxCount;
+    }
+  },
+  maxCount: function (self, key, def) {
+    if (typeof def.minCount !== "undefined") {
+      return def.maxCount;
+    }
+  },
+  value: function (self, key, def) {
+    if (value !== void 0 && value !== null) {
+      return value.toString();
+    } else {
+      return 'null';
+    }
+  },
+  min: function (self, key, def) {
+    if (def.type === Date || def.type === [Date]) {
+      if (typeof min !== "undefined") {
+        return Utility.dateToDateString(min);
+      }
+    } else {
+      if (typeof min !== "undefined") {
+        return min;
+      }
+    }
+  },
+  max: function (self, key, def) {
+    if (def.type === Date || def.type === [Date]) {
+      if (typeof max !== "undefined") {
+        return Utility.dateToDateString(max);
+      }
+    } else {
+      if (typeof max !== "undefined") {
+        return max;
+      }
+    }
+  },
+  type: function (self, key, def) {
+    if (def.type instanceof Function) {
+      return def.type.name;
+    }
+  }
+};
+
 SimpleSchema.messages = function(messages) {
   _.extend(SimpleSchema._globalMessages, messages);
   SimpleSchema._depsGlobalMessages.changed();
@@ -947,6 +1003,14 @@ SimpleSchema.prototype.messages = function(messages) {
   var self = this;
   _.extend(self._messages, messages);
   self._depsMessages.changed();
+};
+
+SimpleSchema.placeholders = function(placeholders) {
+  _.extend(SimpleSchema._globalPlaceholders, placeholders);
+};
+
+SimpleSchema.prototype.placeholders = function(placeholders) {
+  _.extend(this._placeholders, placeholders);
 };
 
 // Returns a string message for the given error type and key. Uses the
@@ -1036,54 +1100,27 @@ SimpleSchema.prototype.messageForError = function(type, key, def, value) {
   }
 
   // Now replace all placeholders in the message with the correct values
+  var placeholders = message.match(/(\[[\w]+\])/g);
 
-  // [key]
-  message = message.replace("[key]", key);
+  message = _.reduce(placeholders, function (message, placeholder) {
+    var hash, fn, value;
 
-  // [label]
-  // The call to self.label() establishes a reactive dependency, too
-  message = message.replace("[label]", self.label(key));
+    hash = placeholder.replace(/[\[\]]/g, '');
 
-  // [minCount]
-  if (typeof def.minCount !== "undefined") {
-    message = message.replace("[minCount]", def.minCount);
-  }
+    fn = self._placeholders[hash] || SimpleSchema._globalPlaceholders[hash];
 
-  // [maxCount]
-  if (typeof def.maxCount !== "undefined") {
-    message = message.replace("[maxCount]", def.maxCount);
-  }
-
-  // [value]
-  if (value !== void 0 && value !== null) {
-    message = message.replace("[value]", value.toString());
-  } else {
-    message = message.replace("[value]", 'null');
-  }
-
-  // [min] and [max]
-  var min = def.min;
-  var max = def.max;
-  if (def.type === Date || def.type === [Date]) {
-    if (typeof min !== "undefined") {
-      message = message.replace("[min]", Utility.dateToDateString(min));
+    if (!fn) {
+      return message;
     }
-    if (typeof max !== "undefined") {
-      message = message.replace("[max]", Utility.dateToDateString(max));
-    }
-  } else {
-    if (typeof min !== "undefined") {
-      message = message.replace("[min]", min);
-    }
-    if (typeof max !== "undefined") {
-      message = message.replace("[max]", max);
-    }
-  }
 
-  // [type]
-  if (def.type instanceof Function) {
-    message = message.replace("[type]", def.type.name);
-  }
+    if (!_.isFunction(fn)) {
+      throw new Meteor.Error("SimpleSchema.findRegExError: placeholder " + placeholder + " is defined with non-function value: " + EJSON.parse(fn));
+    }
+
+    value = fn(self, key, def);
+
+    return value && message.replace(placeholder, value) || message;
+  }, message);
 
   // Now return the message
   return message;

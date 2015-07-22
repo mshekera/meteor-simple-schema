@@ -257,6 +257,42 @@ var pss = new SimpleSchema({
   }
 });
 
+SimpleSchema.placeholders({
+  month: function () {
+    return new Date().getMonth();
+  }
+})
+
+var plss = new SimpleSchema({
+  customPlaceholderGlobal: {
+    type: Number,
+    custom: function () {
+      if (this.value !== 42) {
+        return 'customPlaceholderGlobal';
+      }
+    }
+  },
+  customPlaceholderOwn: {
+    type: Number,
+    custom: function () {
+      if (this.value !== 42) {
+        return 'customPlaceholderOwn';
+      }
+    }
+  }
+});
+
+plss.messages({
+  customPlaceholderGlobal: "Today is [month]",
+  customPlaceholderOwn: "Today is [year]",
+})
+
+plss.placeholders({
+  year: function () {
+    return new Date().getYear();
+  }
+})
+
 var friends = new SimpleSchema({
   name: {
     type: String,
@@ -1949,7 +1985,7 @@ Tinytest.add("SimpleSchema - Minimum Checks - Insert", function(test) {
   test.length(sc.invalidKeys(), 1);
   /* NUMBER */
   sc = validate(ss, {
-    minMaxNumberExclusive: 20 
+    minMaxNumberExclusive: 20
   });
   test.length(sc.invalidKeys(), 1);
   sc = validate(ss, {
@@ -4095,6 +4131,19 @@ Tinytest.add("SimpleSchema - Autoconvert Dates", function (test) {
     minMaxDate: "2013-04-25T01:32:21.196Z"
   });
   test.length(sc.invalidKeys(), 0);
+});
+
+Tinytest.add("SimpleSchema - Custom placeholders", function (test) {
+  var sc;
+  // Both invalid, aren't equal 42
+  sc = validate(plss, {
+    customPlaceholderGlobal: 24,
+    customPlaceholderOwn: 24
+  });
+
+  test.length(sc.invalidKeys(), 2);
+  test.equal(sc.keyErrorMessage("customPlaceholderGlobal"), "Today is " + new Date().getMonth());
+  test.equal(sc.keyErrorMessage("customPlaceholderOwn"), "Today is " + new Date().getYear());
 });
 
 /*
